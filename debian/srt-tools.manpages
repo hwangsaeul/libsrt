@@ -1,0 +1,3 @@
+debian/srt-file-transmit.1
+debian/srt-live-transmit.1
+debian/srt-multiplex.1

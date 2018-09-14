@@ -1,0 +1,10 @@
+image: registry.gitlab.com/eighthave/ci-image-git-buildpackage:latest
+
+pages:
+  stage: deploy
+  artifacts:
+    paths:
+      - "*.deb"
+  script:
+    - gitlab-ci-git-buildpackage-all
+    - gitlab-ci-aptly
