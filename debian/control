@@ -3,9 +3,11 @@ Priority: optional
 Maintainer: Federico Ceratto <federico@debian.org>
 Build-Depends: debhelper (>= 11~),
  cmake,
+ chrpath,
  help2man,
  libssl-dev,
  pkg-config,
+ python3-sphinx,
  tclsh
 Standards-Version: 4.2.1
 Section: libs
@@ -13,17 +15,29 @@ Homepage: https://github.com/Haivision/srt
 Vcs-Browser: https://salsa.debian.org/debian/srt
 Vcs-Git: https://salsa.debian.org/debian/srt.git
 
-Package: libsrt1-dev
+Package: libsrt-dev
 Section: libdevel
 Architecture: any
 Multi-Arch: same
 Depends: libsrt1 (= ${binary:Version}), ${misc:Depends}
+Suggests: libsrt-doc (= ${binary:Version})
 Description: Secure Reliable Transport UDP streaming library
  SRT is a latency-aware UDP transport mechanism optimized for video streams.
  It detects and compensates for jitter and bandwidth fluctuations due to
  network congestion. It mitigates packet loss and supports AES encryption.
  .
  This package contains development files for libsrt1
+
+Package: libsrt-doc
+Section: doc
+Architecture: all
+Depends: ${misc:Depends}, ${sphinxdoc:Depends}
+Description: Secure Reliable Transport UDP streaming library
+ SRT is a latency-aware UDP transport mechanism optimized for video streams.
+ It detects and compensates for jitter and bandwidth fluctuations due to
+ network congestion. It mitigates packet loss and supports AES encryption.
+ .
+ This package contains documentation files for libsrt1
 
 Package: libsrt1
 Architecture: any
@@ -36,7 +50,8 @@ Description: Secure Reliable Transport UDP streaming library
 
 Package: srt-tools
 Architecture: any
-Multi-Arch: same
+Section: utils
+Multi-Arch: foreign
 Depends: libsrt1 (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
 Description: Secure Reliable Transport UDP streaming library
  SRT is a latency-aware UDP transport mechanism optimized for video streams.

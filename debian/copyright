@@ -3,12 +3,14 @@ Upstream-Name: srt
 Source: https://github.com/Haivision/srt
 
 Files: *
-Copyright: © 2017-2018 Haivision Systems Inc and others
-License: MPL-2
+Copyright: 2017-2018 Haivision Systems Inc.
+License: MPL-2.0
 
 Files: debian/*
 Copyright: © 2018 Federico Ceratto <federico@debian.org>
-License: MPL-2
+License: MPL-2.0
+
+License: MPL-2.0
  Mozilla Public License Version 2.0
  ==================================
  .

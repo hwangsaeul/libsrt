@@ -7,11 +7,15 @@ export DEB_LDFLAGS_MAINT_APPEND = -Wl,--as-needed
 include /usr/share/dpkg/default.mk  # provides DEB_VERSION
 
 %:
-	dh $@ --parallel
+	dh $@ --with sphinxdoc
 
 override_dh_auto_clean:
-	dh_auto_clean
-	rm -rf CMakeFiles/
+	dh_clean
+	rm -rf CMakeFiles/ debian/html
+
+override_dh_auto_build:
+	dh_auto_build
+	http_proxy='http://127.0.0.1:9/' sphinx-build -N -c debian -bhtml docs debian/html
 
 override_dh_auto_install:
 	dh_auto_install
