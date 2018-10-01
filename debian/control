@@ -12,8 +12,8 @@ Build-Depends: debhelper (>= 11~),
 Standards-Version: 4.2.1
 Section: libs
 Homepage: https://github.com/Haivision/srt
-Vcs-Browser: https://salsa.debian.org/debian/srt
-Vcs-Git: https://salsa.debian.org/debian/srt.git
+Vcs-Browser: https://salsa.debian.org/debian/libsrt
+Vcs-Git: https://salsa.debian.org/debian/libsrt.git
 
 Package: libsrt-dev
 Section: libdevel
