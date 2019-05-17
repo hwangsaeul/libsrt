@@ -5,7 +5,7 @@ Forwarded: no
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -14,6 +14,8 @@
- #project(SRT VERSION "1.3.0")
+ #project(SRT VERSION "1.3.2")
  project(SRT C CXX)
  
 +include(GNUInstallDirs)
@@ -13,7 +13,7 @@ Forwarded: no
  set (CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/scripts")
  include(haiUtil)
  include(FindPkgConfig)
-@@ -660,6 +662,8 @@
+@@ -681,6 +683,8 @@
  	# We state that Darwin always uses CLANG compiler, which honors this flag the same way.
  	set_target_properties(${name} PROPERTIES COMPILE_FLAGS "${CFLAGS_CXX_STANDARD} ${EXTRA_stransmit}" ${FORCE_RPATH})
  
