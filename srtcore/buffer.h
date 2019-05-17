@@ -317,7 +317,6 @@ public:
        return m_iLastAckPos != m_iStartPos;
    }
    CPacket* getRcvReadyPacket();
-   bool isReadyToPlay(const CPacket* p, uint64_t& tsbpdtime);
 
       ///    Set TimeStamp-Based Packet Delivery Rx Mode
       ///    @param [in] timebase localtime base (uSec) of packet time stamps including buffering delay
@@ -382,9 +381,10 @@ public:
    bool empty() const;
 private:
 
-   /// thread safe bytes counter
+   /// thread safe bytes counter of the Recv & Ack buffer
+   /// @param [in] pkts  acked or removed pkts from rcv buffer (used with acked = true)
    /// @param [in] bytes number of bytes added/delete (if negative) to/from rcv buffer.
-   // XXX Please document.
+   /// @param [in] acked true when adding new pkt in RcvBuffer; false when acking/removing pkts to/from buffer
 
    void countBytes(int pkts, int bytes, bool acked = false);
 
