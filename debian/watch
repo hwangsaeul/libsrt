@@ -1,4 +1,4 @@
 version=3
 
 opts=filenamemangle=s/.+\/v?(\d\S*)\.tar\.gz/srt-$1\.tar\.gz/ \
-  https://github.com/Haivision/srt/tags .*/v?(\d\S*)\.tar\.gz
+  https://github.com/Haivision/srt/tags .*/v?(\d\.\d\.\d*)\.tar\.gz
