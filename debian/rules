@@ -19,9 +19,11 @@ override_dh_auto_build:
 
 override_dh_auto_install:
 	dh_auto_install
-	cp debian/tmp/usr/bin/srt-live-transmit debian/tmp/usr/bin/stransmit
+	test -f debian/tmp/usr/bin/stransmit || cp debian/tmp/usr/bin/srt-live-transmit debian/tmp/usr/bin/stransmit
 
-override_dh_installman:
+override_dh_installman-indep:
+
+override_dh_installman-arch:
 	help2man --no-discard-stderr --no-info --version-string="$(DEB_VERSION)" \
 	--name "" \
 	-o ./debian/srt-file-transmit.1 ./debian/srt-tools/usr/bin/srt-file-transmit
