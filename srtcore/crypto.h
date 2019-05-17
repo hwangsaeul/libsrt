@@ -32,7 +32,10 @@ written by
 
 std::string KmStateStr(SRT_KM_STATE state);
 
-extern logging::Logger mglog;
+namespace srt_logging
+{
+extern Logger mglog;
+}
 
 #endif
 
@@ -115,6 +118,11 @@ public:
 
     // Detailed processing
     int processSrtMsg_KMREQ(const uint32_t* srtdata, size_t len, uint32_t* srtdata_out, ref_t<size_t> r_srtlen, int hsv);
+
+    // This returns:
+    // 1 - the given payload is the same as the currently used key
+    // 0 - there's no key in agent or the payload is error message with agent NOSECRET.
+    // -1 - the payload is error message with other state or it doesn't match the key
     int processSrtMsg_KMRSP(const uint32_t* srtdata, size_t len, int hsv);
     void createFakeSndContext();
 
@@ -147,6 +155,8 @@ public:
     ///                during transmission (otherwise it's during the handshake)
     void getKmMsg_markSent(size_t ki, bool runtime)
     {
+        using srt_logging::mglog;
+
         m_SndKmLastTime = CTimer::getTime();
         if (runtime)
         {
