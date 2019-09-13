@@ -1,7 +1,7 @@
 Source: srt
 Priority: optional
 Maintainer: Federico Ceratto <federico@debian.org>
-Build-Depends: debhelper (>= 11~),
+Build-Depends: debhelper (>= 10~),
  cmake,
  chrpath,
  help2man,
