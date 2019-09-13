@@ -30,7 +30,4 @@ override_dh_installman-arch:
 	help2man --no-discard-stderr --no-info --version-string="$(DEB_VERSION)" \
 	--name "" \
 	-o ./debian/srt-live-transmit.1 ./debian/srt-tools/usr/bin/srt-live-transmit
-	help2man --no-discard-stderr --no-info --version-string="$(DEB_VERSION)" \
-	--name "" \
-	-o ./debian/srt-multiplex.1 ./debian/srt-tools/usr/bin/srt-multiplex
 	dh_installman

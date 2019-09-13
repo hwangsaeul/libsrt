@@ -9,10 +9,8 @@ libsrt.so.1
 libsrt.so.1.*
 srt-file-transmit
 srt-live-transmit
-srt-multiplex
 srt.pc
 stransmit
 version.h
 debian/srt-file-transmit.1
 debian/srt-live-transmit.1
-debian/srt-multiplex.1
