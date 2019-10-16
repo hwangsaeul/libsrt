@@ -69,6 +69,7 @@ modified by
 #include "queue.h"
 #include "handshake.h"
 #include "congctl.h"
+#include "packetfilter.h"
 #include "utilities.h"
 
 #include <haicrypt.h>
@@ -156,6 +157,7 @@ class CUDT
     friend class CRcvQueue;
     friend class CSndUList;
     friend class CRcvUList;
+    friend class PacketFilter;
 
 private: // constructor and desctructor
 
@@ -198,6 +200,8 @@ public: //API
     static int epoll_update_usock(const int eid, const SRTSOCKET u, const int* events = NULL);
     static int epoll_update_ssock(const int eid, const SYSSOCKET s, const int* events = NULL);
     static int epoll_wait(const int eid, std::set<SRTSOCKET>* readfds, std::set<SRTSOCKET>* writefds, int64_t msTimeOut, std::set<SYSSOCKET>* lrfds = NULL, std::set<SYSSOCKET>* wrfds = NULL);
+    static int epoll_uwait(const int eid, SRT_EPOLL_EVENT* fdsSet, int fdsSize, int64_t msTimeOut);
+    static int32_t epoll_set(const int eid, int32_t flags);
     static int epoll_release(const int eid);
     static CUDTException& getlasterror();
     static int perfmon(SRTSOCKET u, CPerfMon* perf, bool clear = true);
@@ -269,6 +273,7 @@ public: // internal API
     size_t OPT_PayloadSize() { return m_zOPT_ExpPayloadSize; }
     uint64_t minNAKInterval() { return m_ullMinNakInt_tk; }
     int32_t ISN() { return m_iISN; }
+    int sndLossLength() { return m_pSndLossList->getLossLength(); }
 
     // XXX See CUDT::tsbpd() to see how to implement it. This should
     // do the same as TLPKTDROP feature when skipping packets that are agreed
@@ -347,6 +352,7 @@ private:
     SRT_ATR_NODISCARD int processSrtMsg_HSREQ(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD int processSrtMsg_HSRSP(const uint32_t* srtdata, size_t len, uint32_t ts, int hsv);
     SRT_ATR_NODISCARD bool interpretSrtHandshake(const CHandShake& hs, const CPacket& hspkt, uint32_t* out_data, size_t* out_len);
+    SRT_ATR_NODISCARD bool checkApplyFilterConfig(const std::string& cs);
 
     void updateAfterSrtHandshake(int srt_cmd, int hsv);
 
@@ -543,14 +549,12 @@ private: // Identification
     HaiCrypt_Secret m_CryptoSecret;
     int m_iSndCryptoKeyLen;
 
-    // XXX Consider removing them. The m_bDataSender may stay here
+    // XXX Consider removing. The m_bDataSender stays here
     // in order to maintain the HS side selection in HSv4.
-    // m_bTwoWayData is unused.
     bool m_bDataSender;
-    bool m_bTwoWayData;
 
     // HSv4 (legacy handshake) support)
-    uint64_t m_ullSndHsLastTime_us;	    //Last SRT handshake request time
+    uint64_t m_ullSndHsLastTime_us;  //Last SRT handshake request time
     int      m_iSndHsRetryCnt;       //SRT handshake retries left
 
     bool m_bMessageAPI;
@@ -577,6 +581,12 @@ private:
     // Congestion control
     std::vector<EventSlot> m_Slots[TEV__SIZE];
     SrtCongestion m_CongCtl;
+
+    // Packet filtering
+    PacketFilter m_PacketFilter;
+    std::string m_OPT_PktFilterConfigString;
+    SRT_ARQLevel m_PktFilterRexmitLevel;
+    std::string m_sPeerPktFilterConfigString;
 
     // Attached tool function
     void EmitSignal(ETransmissionEvent tev, EventVariant var);
@@ -654,6 +664,7 @@ private: // Receiving related data
     int32_t m_iRcvLastAckAck;                    // Last sent ACK that has been acknowledged
     int32_t m_iAckSeqNo;                         // Last ACK sequence number
     int32_t m_iRcvCurrSeqNo;                     // Largest received sequence number
+    int32_t m_iRcvCurrPhySeqNo;                  // Same as m_iRcvCurrSeqNo, but physical only (disregarding a filter)
 
     uint64_t m_ullLastWarningTime;               // Last time that a warning message is sent
 
@@ -663,6 +674,7 @@ private: // Receiving related data
     uint32_t m_lSrtVersion;
     uint32_t m_lMinimumPeerSrtVersion;
     uint32_t m_lPeerSrtVersion;
+    uint32_t m_lPeerSrtFlags;
 
     bool m_bTsbPd;                               // Peer sends TimeStamp-Based Packet Delivery Packets 
     pthread_t m_RcvTsbPdThread;                  // Rcv TsbPD Thread handle
@@ -707,13 +719,14 @@ private: // synchronization: mutexes and conditions
     void releaseSynch();
 
 private: // Common connection Congestion Control setup
-    void setupCC();
+    SRT_REJECT_REASON setupCC();
     void updateCC(ETransmissionEvent, EventVariant arg);
     bool createCrypter(HandshakeSide side, bool bidi);
 
 private: // Generation and processing of packets
     void sendCtrl(UDTMessageType pkttype, void* lparam = NULL, void* rparam = NULL, int size = 0);
     void processCtrl(CPacket& ctrlpkt);
+    void sendLossReport(const std::vector< std::pair<int32_t, int32_t> >& losslist);
 
     /// Pack a packet from a list of lost packets.
     ///
@@ -754,6 +767,12 @@ private: // Trace
         uint64_t rcvBytesDropTotal;
         int m_rcvUndecryptTotal;
         uint64_t m_rcvBytesUndecryptTotal;
+
+        int sndFilterExtraTotal;
+        int rcvFilterExtraTotal;
+        int rcvFilterSupplyTotal;
+        int rcvFilterLossTotal;
+
         int64_t m_sndDurationTotal;         // total real time for sending
 
         uint64_t lastSampleTime;            // last performance sample time
@@ -780,6 +799,12 @@ private: // Trace
         uint64_t traceRcvBytesDrop;
         int traceRcvUndecrypt;
         uint64_t traceRcvBytesUndecrypt;
+
+        int sndFilterExtra;
+        int rcvFilterExtra;
+        int rcvFilterSupply;
+        int rcvFilterLoss;
+
         int64_t sndDuration;                // real time for sending
         int64_t sndDurationCounter;         // timers to record the sending duration
     } m_stats;
@@ -797,7 +822,6 @@ private: // Timers
     uint64_t m_ullNextACKTime_tk;             // Next ACK time, in CPU clock cycles, same below
     uint64_t m_ullNextNAKTime_tk;             // Next NAK time
 
-    volatile uint64_t m_ullSYNInt_tk;         // SYN interval
     volatile uint64_t m_ullACKInt_tk;         // ACK interval
     volatile uint64_t m_ullNAKInt_tk;         // NAK interval
     volatile uint64_t m_ullLastRspTime_tk;    // time stamp of last response from the peer
