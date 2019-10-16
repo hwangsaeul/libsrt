@@ -1,10 +1,14 @@
-srt (1.3.4-1) UNRELEASED; urgency=medium
+srt (1.4.0-1) UNRELEASED; urgency=medium
 
+  [ Jakub Adam ]
   * New upstream release
   * Don't build manpage for removed srt-multiplex tool
   * Add libssl-dev as Depends of libsrt-dev (needed by pkg-config --cflags)
 
- -- Jakub Adam <jakub.adam@collabora.com>  Fri, 13 Sep 2019 12:39:22 +0200
+  [ Jeongseok Kim ]
+  * New upstream release (1.4.0)
+
+ -- Jeongseok Kim <jeongseok.kim@sk.com>  Wed, 16 Oct 2019 15:49:17 +0900
 
 srt (1.3.2-1) unstable; urgency=medium
 

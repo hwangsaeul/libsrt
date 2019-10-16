@@ -21,6 +21,7 @@ Architecture: any
 Multi-Arch: same
 Depends: libsrt1 (= ${binary:Version}), libssl-dev, ${misc:Depends}
 Suggests: libsrt-doc (= ${binary:Version})
+Breaks: libsrt-dev (<< 1.4.0),
 Description: Secure Reliable Transport UDP streaming library
  SRT is a latency-aware UDP transport mechanism optimized for video streams.
  It detects and compensates for jitter and bandwidth fluctuations due to
@@ -43,6 +44,7 @@ Package: libsrt1
 Architecture: any
 Multi-Arch: same
 Depends: ${shlibs:Depends}, ${misc:Depends}
+Breaks: libsrt1 (<< 1.4.0),
 Description: Secure Reliable Transport UDP streaming library
  SRT is a latency-aware UDP transport mechanism optimized for video streams.
  It detects and compensates for jitter and bandwidth fluctuations due to
@@ -53,6 +55,7 @@ Architecture: any
 Section: utils
 Multi-Arch: foreign
 Depends: libsrt1 (= ${binary:Version}), ${shlibs:Depends}, ${misc:Depends}
+Breaks: srt-tools (<< 1.4.0),
 Description: Secure Reliable Transport UDP streaming library
  SRT is a latency-aware UDP transport mechanism optimized for video streams.
  It detects and compensates for jitter and bandwidth fluctuations due to
