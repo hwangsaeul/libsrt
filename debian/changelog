@@ -1,4 +1,4 @@
-srt (1.4.0-2) UNRELEASED; urgency=medium
+srt (1.4.1-0h8l0) unstable; urgency=medium
 
   [ Jakub Adam ]
   * New upstream release
@@ -8,8 +8,9 @@ srt (1.4.0-2) UNRELEASED; urgency=medium
   [ Jeongseok Kim ]
   * New upstream release (1.4.0)
   * New upstream release (1.4.0-32d9fa9)
+  * New upstream release (1.4.1-fdb20ff)
 
- -- Jeongseok Kim <jeongseok.kim@sk.com>  Wed, 16 Oct 2019 15:49:17 +0900
+ -- Jeongseok Kim <jeongseok.kim@sk.com>  Mon, 13 Jan 2020 13:06:23 +0900
 
 srt (1.3.2-1) unstable; urgency=medium
 
