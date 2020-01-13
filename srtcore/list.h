@@ -79,12 +79,12 @@ public:
       /// Read the loss length.
       /// @return The length of the list.
 
-   int getLossLength();
+   int getLossLength() const;
 
       /// Read the first (smallest) loss seq. no. in the list and remove it.
       /// @return The seq. no. or -1 if the list is empty.
 
-   int32_t getLostSeq();
+   int32_t popLostSeq();
 
 private:
    struct Seq
@@ -99,7 +99,7 @@ private:
    int m_iSize;                         // size of the static array
    int m_iLastInsertPos;                // position of last insert node
 
-   pthread_mutex_t m_ListLock;          // used to synchronize list operation
+   mutable pthread_mutex_t m_ListLock; // used to synchronize list operation
 
 private:
    CSndLossList(const CSndLossList&);
@@ -227,7 +227,7 @@ struct CRcvFreshLoss
 {
     int32_t seq[2];
     int ttl;
-    uint64_t timestamp;
+    srt::sync::steady_clock::time_point timestamp;
 
     CRcvFreshLoss(int32_t seqlo, int32_t seqhi, int initial_ttl);
 

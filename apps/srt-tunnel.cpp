@@ -91,7 +91,8 @@ protected:
     template <class DerivedMedium, class SocketType>
     static Medium* CreateAcceptor(DerivedMedium* self, const sockaddr_in& sa, SocketType sock, size_t chunk)
     {
-        DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + SockaddrToString((sockaddr*)&sa)), chunk);
+        string addr = SockaddrToString((sockaddr*)&sa);
+        DerivedMedium* m = new DerivedMedium(UriParser(self->type() + string("://") + addr), chunk);
         m->m_socket = sock;
         return m;
     }
@@ -419,7 +420,7 @@ public:
 protected:
     virtual void Init() override;
 
-    void ConfigurePre(SRTSOCKET socket);
+    void ConfigurePre();
     void ConfigurePost(SRTSOCKET socket);
 
     using Medium::Error;
@@ -450,6 +451,32 @@ public:
 
 #endif
 
+#ifdef _WIN32
+    static int tcp_close(int socket)
+    {
+        return ::closesocket(socket);
+    }
+
+    enum { DEF_SEND_FLAG = 0 };
+
+#elif defined(LINUX) || defined(GNU) || defined(CYGWIN)
+    static int tcp_close(int socket)
+    {
+        return ::close(socket);
+    }
+
+    enum { DEF_SEND_FLAG = MSG_NOSIGNAL };
+
+#else
+    static int tcp_close(int socket)
+    {
+        return ::close(socket);
+    }
+
+    enum { DEF_SEND_FLAG = 0 };
+
+#endif
+
     bool IsOpen() override { return m_open; }
     bool End() override { return m_eof; }
     bool Broken() override { return m_broken; }
@@ -460,7 +487,7 @@ public:
         lock_guard<mutex> lk(access);
         if (m_socket == -1)
             return;
-        ::close(m_socket);
+        tcp_close(m_socket);
         m_socket = -1;
     }
 
@@ -475,9 +502,12 @@ public:
 
 protected:
 
-    // Just models. No options are predicted for now.
-    void ConfigurePre(int )
+    void ConfigurePre()
     {
+#if defined(__APPLE__)
+        int optval = 1;
+        setsockopt(m_socket, SOL_SOCKET, SO_NOSIGPIPE, &optval, sizeof(optval));
+#endif
     }
 
     void ConfigurePost(int)
@@ -516,11 +546,11 @@ void SrtMedium::Init()
     m_options["transtype"] = "file";
 }
 
-void SrtMedium::ConfigurePre(SRTSOCKET so)
+void SrtMedium::ConfigurePre()
 {
     vector<string> fails;
     m_options["mode"] = "caller";
-    SrtConfigurePre(so, "", m_options, &fails);
+    SrtConfigurePre(m_socket, "", m_options, &fails);
     if (!fails.empty())
     {
         cerr << "Failed options: " << Printable(fails) << endl;
@@ -543,7 +573,7 @@ void SrtMedium::CreateListener()
 
     m_socket = srt_create_socket();
 
-    ConfigurePre(m_socket);
+    ConfigurePre();
 
     sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
 
@@ -570,7 +600,7 @@ void TcpMedium::CreateListener()
     int backlog = 5; // hardcoded!
 
     m_socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ConfigurePre(m_socket);
+    ConfigurePre();
 
     sockaddr_in sa = CreateAddrInet(m_uri.host(), m_uri.portno());
 
@@ -578,14 +608,14 @@ void TcpMedium::CreateListener()
 
     if (stat == -1)
     {
-        close(m_socket);
+        tcp_close(m_socket);
         Error(errno, "bind");
     }
 
     stat = listen(m_socket, backlog);
     if ( stat == -1 )
     {
-        close(m_socket);
+        tcp_close(m_socket);
         Error(errno, "listen");
     }
 
@@ -628,7 +658,7 @@ unique_ptr<Medium> TcpMedium::Accept()
 void SrtMedium::CreateCaller()
 {
     m_socket = srt_create_socket();
-    ConfigurePre(m_socket);
+    ConfigurePre();
 
     // XXX setting up outgoing port not supported
 }
@@ -636,7 +666,7 @@ void SrtMedium::CreateCaller()
 void TcpMedium::CreateCaller()
 {
     m_socket = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    ConfigurePre(m_socket);
+    ConfigurePre();
 }
 
 void SrtMedium::Connect()
@@ -671,7 +701,7 @@ int SrtMedium::ReadInternal(char* buffer, int size)
 
 int TcpMedium::ReadInternal(char* buffer, int size)
 {
-    return read(m_socket, buffer, size);
+    return ::recv(m_socket, buffer, size, 0);
 }
 
 bool SrtMedium::IsErrorAgain()
@@ -779,7 +809,7 @@ void TcpMedium::Write(ref_t<bytevector> r_buffer)
 {
     bytevector& buffer = *r_buffer;
 
-    int st = ::write(m_socket, buffer.data(), buffer.size());
+    int st = ::send(m_socket, buffer.data(), buffer.size(), DEF_SEND_FLAG);
     if (st == -1)
     {
         Error(errno, "send");
@@ -948,9 +978,15 @@ int OnINT_StopService(int)
 
 int main( int argc, char** argv )
 {
+    if (!SysInitializeNetwork())
+    {
+        cerr << "Fail to initialize network module.";
+        return 1;
+    }
+
     size_t chunk = default_chunk;
 
-    set<string>
+    OptionName
         o_loglevel = { "ll", "loglevel" },
         o_logfa = { "lf", "logfa" },
         o_chunk = {"c", "chunk" },

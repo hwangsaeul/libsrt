@@ -26,7 +26,7 @@ int main(int argc, char* argv[])
    // use this function to initialize the UDT library
    srt_startup();
 
-   srt_setloglevel(logging::LogLevel::debug);
+   srt_setloglevel(srt_logging::LogLevel::debug);
 
    addrinfo hints;
    addrinfo* res;
@@ -70,6 +70,9 @@ int main(int argc, char* argv[])
       return 0;
    }
 
+   // Test the deprecated option feature here:
+   //srt_setsockopt(sfd, 0, SRTO_STRICTENC, &no, sizeof no);
+
    // Windows UDP issue
    // For better performance, modify HKLM\System\CurrentControlSet\Services\Afd\Parameters\FastSendDatagramThreshold
 #ifdef WIN32
@@ -110,7 +113,7 @@ int main(int argc, char* argv[])
       return 0;
    }
 
-   constexpr int srtrfdslenmax = 100;
+   const int srtrfdslenmax = 100;
    SRTSOCKET srtrfds[srtrfdslenmax];
    char data[1500];
 
