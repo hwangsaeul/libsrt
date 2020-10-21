@@ -7,8 +7,21 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/.
  * 
  */
-#ifndef INC__PLATFORM_SYS_H
-#define INC__PLATFORM_SYS_H
+#ifndef INC_SRT_PLATFORM_SYS_H
+#define INC_SRT_PLATFORM_SYS_H
+
+// INFORMATION
+//
+// This file collects all required platform-specific declarations
+// required to provide everything that the SRT library needs from system.
+//
+// There's also semi-modular system implemented using SRT_IMPORT_* macros.
+// To require a module to be imported, #define SRT_IMPORT_* where * is
+// the module name. Currently handled module macros:
+//
+// SRT_IMPORT_TIME   (mach time on Mac, portability gettimeofday on WIN32)
+// SRT_IMPORT_EVENT  (includes kevent on Mac)
+
 
 // INFORMATION
 //
@@ -92,6 +105,15 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <fcntl.h>
+
+#ifdef __cplusplus
+// Headers for errno, string and stdlib are
+// included indirectly correct C++ way.
+#else
+#include <errno.h>
+#include <string.h>
+#include <stdlib.h>
+#endif
 
 #endif
 

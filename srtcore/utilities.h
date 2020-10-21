@@ -13,8 +13,18 @@ written by
    Haivision Systems Inc.
  *****************************************************************************/
 
-#ifndef INC__SRT_UTILITIES_H
-#define INC__SRT_UTILITIES_H
+#ifndef INC_SRT_UTILITIES_H
+#define INC_SRT_UTILITIES_H
+
+// ATTRIBUTES:
+//
+// ATR_UNUSED: declare an entity ALLOWED to be unused (prevents warnings)
+// ATR_DEPRECATED: declare an entity deprecated (compiler should warn when used)
+// ATR_NOEXCEPT: The true `noexcept` from C++11, or nothing if compiling in pre-C++11 mode
+// ATR_NOTHROW: In C++11: `noexcept`. In pre-C++11: `throw()`. Required for GNU libstdc++.
+// ATR_CONSTEXPR: In C++11: `constexpr`. Otherwise empty.
+// ATR_OVERRIDE: In C++11: `override`. Otherwise empty.
+// ATR_FINAL: In C++11: `final`. Otherwise empty.
 
 // ATTRIBUTES:
 //
@@ -103,6 +113,7 @@ written by
 #include <algorithm>
 #include <bitset>
 #include <map>
+#include <vector>
 #include <functional>
 #include <memory>
 #include <iomanip>
@@ -451,47 +462,25 @@ inline bool IsSet(int32_t bitset, int32_t flagset)
     return (bitset & flagset) == flagset;
 }
 
-// Homecooked version of ref_t. It's a copy of std::reference_wrapper
-// voided of unwanted properties and renamed to ref_t.
-
-
-#if HAVE_CXX11
-#include <functional>
-#endif
-
-template<typename Type>
-class ref_t
+// std::addressof in C++11,
+// needs to be provided for C++03
+template <class RefType>
+inline RefType* AddressOf(RefType& r)
 {
-    Type* m_data;
+    return (RefType*)(&(unsigned char&)(r));
+}
 
-public:
-    typedef Type type;
+template <class T>
+struct explicit_t
+{
+    T inobject;
+    explicit_t(const T& uo): inobject(uo) {}
 
-#if HAVE_CXX11
-    explicit ref_t(Type& __indata)
-        : m_data(std::addressof(__indata))
-        { }
-#else
-    explicit ref_t(Type& __indata)
-        : m_data((Type*)(&(char&)(__indata)))
-        { }
-#endif
+    operator T() const { return inobject; }
 
-    ref_t(const ref_t<Type>& inref)
-        : m_data(inref.m_data)
-    { }
-
-#if HAVE_CXX11
-    ref_t(const std::reference_wrapper<Type>& i): m_data(std::addressof(i.get())) {}
-#endif
-
-    Type& operator*() { return *m_data; }
-
-    Type& get() const
-    { return *m_data; }
-
-    Type operator->() const
-    { return *m_data; }
+private:
+    template <class X>
+    explicit_t(const X& another);
 };
 
 // This is required for Printable function if you have a container of pairs,
@@ -507,15 +496,6 @@ namespace srt_pair_op
 }
 
 #if HAVE_CXX11
-
-// This alias was created so that 'Ref' (not 'ref') is used everywhere.
-// Normally the C++11 'ref' fits perfectly here, however in C++03 mode
-// it would have to be newly created. This would then cause a conflict
-// between C++03 SRT and C++11 applications as well as between C++ standard
-// library and SRT when SRT is compiled in C++11 mode (as it happens on
-// Darwin/clang).
-template <class In>
-inline auto Ref(In& i) -> decltype(std::ref(i)) { return std::ref(i); }
 
 template <class In>
 inline auto Move(In& i) -> decltype(std::move(i)) { return std::move(i); }
@@ -546,8 +526,6 @@ inline std::string Sprint(Args&&... args)
 template <class T>
 using UniquePtr = std::unique_ptr<T>;
 
-// Some utilities borrowed from tumux, as this is using options
-// similar way.
 template <class Container, class Value = typename Container::value_type, typename... Args> inline
 std::string Printable(const Container& in, Value /*pseudoargument*/, Args&&... args)
 {
@@ -593,12 +571,6 @@ auto map_getp(const Map& m, const Key& key) -> typename Map::mapped_type const*
 
 #else
 
-template <class Type>
-ref_t<Type> Ref(Type& arg)
-{
-    return ref_t<Type>(arg);
-}
-
 // The unique_ptr requires C++11, and the rvalue-reference feature,
 // so here we're simulate the behavior using the old std::auto_ptr.
 
@@ -626,14 +598,14 @@ public:
 
     // All constructor declarations must be repeated.
     // "Constructor delegation" is also only C++11 feature.
-    explicit UniquePtr(element_type* __p = 0) throw() : Base(__p) {}
-    UniquePtr(UniquePtr& __a) throw() : Base(__a) { }
-    template<typename _Tp1>
-    UniquePtr(UniquePtr<_Tp1>& __a) throw() : Base(__a) {}
+    explicit UniquePtr(element_type* p = 0) throw() : Base(p) {}
+    UniquePtr(UniquePtr& a) throw() : Base(a) { }
+    template<typename Type1>
+    UniquePtr(UniquePtr<Type1>& a) throw() : Base(a) {}
 
-    UniquePtr& operator=(UniquePtr& __a) throw() { return Base::operator=(__a); }
-    template<typename _Tp1>
-    UniquePtr& operator=(UniquePtr<_Tp1>& __a) throw() { return Base::operator=(__a); }
+    UniquePtr& operator=(UniquePtr& a) throw() { return Base::operator=(a); }
+    template<typename Type1>
+    UniquePtr& operator=(UniquePtr<Type1>& a) throw() { return Base::operator=(a); }
 
     // Good, now we need to add some parts of the API of unique_ptr.
 
@@ -715,7 +687,7 @@ std::string PrintableMod(const Container& in, const std::string& prefix)
 }
 
 template<typename InputIterator, typename OutputIterator, typename TransFunction>
-void FilterIf(InputIterator bg, InputIterator nd,
+inline void FilterIf(InputIterator bg, InputIterator nd,
         OutputIterator out, TransFunction fn)
 {
     for (InputIterator i = bg; i != nd; ++i)
@@ -725,6 +697,16 @@ void FilterIf(InputIterator bg, InputIterator nd,
             continue;
         *out++ = result.first;
     }
+}
+
+template <class Value, class ArgValue>
+inline void insert_uniq(std::vector<Value>& v, const ArgValue& val)
+{
+    typename std::vector<Value>::iterator i = std::find(v.begin(), v.end(), val);
+    if (i != v.end())
+        return;
+
+    v.push_back(val);
 }
 
 template <class Signature>
@@ -934,8 +916,8 @@ inline std::string BufferStamp(const char* mem, size_t size)
 
     int n = 16-size;
     if (n > 0)
-        memset(spread+16-n, 0, n);
-    memcpy(spread, mem, min(size_t(16), size));
+        memset((spread + 16 - n), 0, n);
+    memcpy((spread), mem, min(size_t(16), size));
 
     // Now prepare 4 cells for uint32_t.
     union
@@ -943,7 +925,7 @@ inline std::string BufferStamp(const char* mem, size_t size)
         uint32_t sum;
         char cells[4];
     };
-    memset(cells, 0, 4);
+    memset((cells), 0, 4);
 
     for (size_t x = 0; x < 4; ++x)
         for (size_t y = 0; y < 4; ++y)
@@ -1021,7 +1003,13 @@ ATR_CONSTEXPR size_t Size(const V (&)[N]) ATR_NOEXCEPT { return N; }
 template <size_t DEPRLEN, typename ValueType>
 inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 {
-    return (old_value*(DEPRLEN-1) + new_value)/DEPRLEN;
+    return (old_value * (DEPRLEN - 1) + new_value) / DEPRLEN;
+}
+
+template <size_t DEPRLEN, typename ValueType>
+inline ValueType avg_iir_w(ValueType old_value, ValueType new_value, size_t new_val_weight)
+{
+    return (old_value * (DEPRLEN - new_val_weight) + new_value * new_val_weight) / DEPRLEN;
 }
 
 // Property accessor definitions
@@ -1060,8 +1048,8 @@ inline ValueType avg_iir(ValueType old_value, ValueType new_value)
 
 #define SRTU_PROPERTY_RR(type, name, field) type name() { return field; }
 #define SRTU_PROPERTY_RO(type, name, field) type name() const { return field; }
-#define SRTU_PROPERTY_WO(type, name, field) void name(type arg) { field = arg; }
-#define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& name(type arg) { field = arg; return *this; }
+#define SRTU_PROPERTY_WO(type, name, field) void set_##name(type arg) { field = arg; }
+#define SRTU_PROPERTY_WO_CHAIN(otype, type, name, field) otype& set_##name(type arg) { field = arg; return *this; }
 #define SRTU_PROPERTY_RW(type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RRW(type, name, field) SRTU_PROPERTY_RR(type, name, field); SRTU_PROPERTY_WO(type, name, field)
 #define SRTU_PROPERTY_RW_CHAIN(otype, type, name, field) SRTU_PROPERTY_RO(type, name, field); SRTU_PROPERTY_WO_CHAIN(otype, type, name, field)

@@ -50,8 +50,8 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_PACKET_H__
-#define __UDT_PACKET_H__
+#ifndef INC_SRT_PACKET_H
+#define INC_SRT_PACKET_H
 
 #include "udt.h"
 #include "common.h"
@@ -174,11 +174,14 @@ typedef Bits<26, 0> MSGNO_SEQ_OLD;
 // The message should be extracted as PMASK_MSGNO_SEQ, if REXMIT is supported, and PMASK_MSGNO_SEQ_OLD otherwise.
 
 const uint32_t PACKET_SND_NORMAL = 0, PACKET_SND_REXMIT = MSGNO_REXMIT::mask;
+const int MSGNO_SEQ_MAX = MSGNO_SEQ::mask;
 
 #else
 // Old bit breakdown - no rexmit flag
 typedef Bits<26, 0> MSGNO_SEQ;
 #endif
+
+typedef RollNumber<MSGNO_SEQ::size-1, 1> MsgNo;
 
 
 // constexpr in C++11 !
@@ -244,7 +247,7 @@ public:
       /// @param rparam [in] pointer to the second data structure, explained by the packet type.
       /// @param size [in] size of rparam, in number of bytes;
 
-   void pack(UDTMessageType pkttype, const void* lparam = NULL, void* rparam = NULL, int size = 0);
+   void pack(UDTMessageType pkttype, const int32_t* lparam = NULL, void* rparam = NULL, int size = 0);
 
       /// Read the packet vector.
       /// @return Pointer to the packet vector.
@@ -367,7 +370,7 @@ protected:
    // DynamicStruct is the same as array of given type and size, just it
    // enforces that you index it using a symbol from symbolic enum type, not by a bare integer.
 
-   typedef DynamicStruct<uint32_t, SRT_PH__SIZE, SrtPktHeaderFields> HEADER_TYPE;
+   typedef DynamicStruct<uint32_t, SRT_PH_E_SIZE, SrtPktHeaderFields> HEADER_TYPE;
    HEADER_TYPE m_nHeader;  //< The 128-bit header field
 
    // XXX NOTE: iovec here is not portable. On Windows there's a different
@@ -378,7 +381,7 @@ protected:
    // class IoVector: public WSAMSG { public: size_t size() { return len; } char* data() { return buf; } };
    IOVector m_PacketVector[PV_SIZE];             //< The 2-demension vector of UDT packet [header, data]
 
-   int32_t __pad;
+   int32_t m_extra_pad;
    bool m_data_owned;
 
 protected:
@@ -393,8 +396,12 @@ public:
    int32_t& m_iID;                      // alias: socket ID
    char*& m_pcData;                     // alias: data/control information
 
+   // Experimental: sometimes these references don't work!
+   char* getData();
+   char* release();
+
    //static const int m_iPktHdrSize;	// packet header size
-   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH__SIZE * sizeof(uint32_t)
+   static const size_t HDR_SIZE = sizeof(HEADER_TYPE); // packet header size = SRT_PH_E_SIZE * sizeof(uint32_t)
 
    // Used in many computations
    // Actually this can be also calculated as: sizeof(struct ether_header) + sizeof(struct ip) + sizeof(struct udphdr).
@@ -414,13 +421,13 @@ public:
    size_t size() const { return getLength(); }
    uint32_t header(SrtPktHeaderFields field) const { return m_nHeader[field]; }
 
-   std::string MessageFlagStr()
 #if ENABLE_LOGGING
-   { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
+   std::string MessageFlagStr() { return PacketMessageFlagStr(m_nHeader[SRT_PH_MSGNO]); }
+   std::string Info();
 #else
-   { return ""; }
+   std::string MessageFlagStr() { return std::string(); }
+   std::string Info() { return std::string(); }
 #endif
 };
-
 
 #endif

@@ -50,12 +50,13 @@ modified by
    Haivision Systems Inc.
 *****************************************************************************/
 
-#ifndef __UDT_COMMON_H__
-#define __UDT_COMMON_H__
+#ifndef INC_SRT_COMMON_H
+#define INC_SRT_COMMON_H
 
 #define _CRT_SECURE_NO_WARNINGS 1 // silences windows complaints for sscanf
-
+#include <memory>
 #include <cstdlib>
+#include <cstdio>
 #ifndef _WIN32
    #include <sys/time.h>
    #include <sys/uio.h>
@@ -64,9 +65,18 @@ modified by
    //#include <windows.h>
 #endif
 
-#include "udt.h"
+#include "srt.h"
 #include "utilities.h"
 #include "sync.h"
+#include "netinet_any.h"
+#include "packetfilter_api.h"
+
+// System-independent errno
+#ifndef _WIN32
+   #define NET_ERROR errno
+#else
+   #define NET_ERROR WSAGetLastError()
+#endif
 
 
 #ifdef _DEBUG
@@ -84,7 +94,7 @@ modified by
 // is predicted to NEVER LET ANY EXCEPTION out of implementation,
 // so it's useless to catch this exception anyway.
 
-class UDT_API CUDTException: public std::exception
+class SRT_API CUDTException: public std::exception
 {
 public:
 
@@ -99,6 +109,8 @@ public:
     {
         return getErrorMessage();
     }
+
+    const std::string& getErrorString() const;
 
     /// Get the system errno for the exception.
     /// @return errno.
@@ -251,6 +263,12 @@ enum EConnectStatus
     CONN_AGAIN = -2      //< No data was read, don't change any state.
 };
 
+enum EConnectMethod
+{
+    COM_ASYNCHRO,
+    COM_SYNCHRO
+};
+
 std::string ConnectStatusStr(EConnectStatus est);
 
 
@@ -268,7 +286,7 @@ enum ETransmissionEvent
     TEV_RECEIVE,    // --> When a data packet was received - older CCC::onPktReceived
     TEV_CUSTOM,     // --> probably dead call - older CCC::processCustomMsg
 
-    TEV__SIZE
+    TEV_E_SIZE
 };
 
 std::string TransmissionEventStr(ETransmissionEvent ev);
@@ -303,7 +321,7 @@ struct EventVariant
         int32_t ack;
         struct
         {
-            int32_t* ptr;
+            const int32_t* ptr;
             size_t len;
         } array;
         ECheckTimerStage stage;
@@ -337,7 +355,7 @@ struct EventVariant
 
 
     template <class T>
-    EventVariant(T arg)
+    EventVariant(const T arg)
     {
         *this = arg;
     }
@@ -347,25 +365,25 @@ struct EventVariant
         return u.array.ptr;
     }
 
-    size_t get_len()
+    size_t get_len() const
     {
         return u.array.len;
     }
 
-    void set(int32_t* ptr, size_t len)
+    void set(const int32_t* ptr, size_t len)
     {
         type = ARRAY;
         u.array.ptr = ptr;
         u.array.len = len;
     }
 
-    EventVariant(int32_t* ptr, size_t len)
+    EventVariant(const int32_t* ptr, size_t len)
     {
         set(ptr, len);
     }
 
     template<Type T>
-    typename VariantFor<T>::type get()
+    typename VariantFor<T>::type get() const
     {
         return u.*(VariantFor<T>::field());
     }
@@ -516,128 +534,10 @@ struct EventSlot
 
     ~EventSlot()
     {
-        if (slot)
-            delete slot;
+        delete slot;
     }
 };
 
-
-// Old UDT library specific classes, moved from utilities as utilities
-// should now be general-purpose.
-
-class CTimer
-{
-public:
-   CTimer();
-   ~CTimer();
-
-public:
-
-      /// Seelp until CC "nexttime_tk".
-      /// @param [in] nexttime_tk next time the caller is waken up.
-
-   void sleepto(const srt::sync::steady_clock::time_point &nexttime);
-
-      /// Stop the sleep() or sleepto() methods.
-
-   void interrupt();
-
-      /// trigger the clock for a tick, for better granuality in no_busy_waiting timer.
-
-   void tick();
-
-public:
-
-      /// trigger an event such as new connection, close, new data, etc. for "select" call.
-
-   static void triggerEvent();
-
-   enum EWait {WT_EVENT, WT_ERROR, WT_TIMEOUT};
-
-      /// wait for an event to br triggered by "triggerEvent".
-      /// @retval WT_EVENT The event has happened
-      /// @retval WT_TIMEOUT The event hasn't happened, the function exited due to timeout
-      /// @retval WT_ERROR The function has exit due to an error
-
-   static EWait waitForEvent();
-
-      /// sleep for a short interval. exact sleep time does not matter
-
-   static void sleep();
-   
-      /// Wait for condition with timeout 
-      /// @param [in] cond Condition variable to wait for
-      /// @param [in] mutex locked mutex associated with the condition variable
-      /// @param [in] delay timeout in microseconds
-      /// @retval 0 Wait was successfull
-      /// @retval ETIMEDOUT The wait timed out
-
-   static int condTimedWaitUS(pthread_cond_t* cond, pthread_mutex_t* mutex, uint64_t delay);
-
-private:
-   srt::sync::steady_clock::time_point m_tsSchedTime;             // next schedulled time
-
-   pthread_cond_t m_TickCond;
-   pthread_mutex_t m_TickLock;
-
-   static pthread_cond_t m_EventCond;
-   static pthread_mutex_t m_EventLock;
-};
-
-////////////////////////////////////////////////////////////////////////////////
-
-class CGuard
-{
-public:
-   /// Constructs CGuard, which locks the given mutex for
-   /// the scope where this object exists.
-   /// @param lock Mutex to lock
-   /// @param if_condition If this is false, CGuard will do completely nothing
-   CGuard(pthread_mutex_t& lock, bool if_condition = true);
-   ~CGuard();
-
-public:
-   static int enterCS(pthread_mutex_t& lock);
-   static int leaveCS(pthread_mutex_t& lock);
-
-   static void createMutex(pthread_mutex_t& lock);
-   static void releaseMutex(pthread_mutex_t& lock);
-
-   static void createCond(pthread_cond_t& cond);
-   static void releaseCond(pthread_cond_t& cond);
-
-   void forceUnlock();
-
-private:
-   pthread_mutex_t& m_Mutex;            // Alias name of the mutex to be protected
-   int m_iLocked;                       // Locking status
-
-   CGuard& operator=(const CGuard&);
-};
-
-class InvertedGuard
-{
-    pthread_mutex_t* m_pMutex;
-public:
-
-    InvertedGuard(pthread_mutex_t* smutex): m_pMutex(smutex)
-    {
-        if ( !smutex )
-            return;
-
-        CGuard::leaveCS(*smutex);
-    }
-
-    ~InvertedGuard()
-    {
-        if ( !m_pMutex )
-            return;
-
-        CGuard::enterCS(*m_pMutex);
-    }
-};
-
-////////////////////////////////////////////////////////////////////////////////
 
 // UDT Sequence Number 0 - (2^31 - 1)
 
@@ -650,7 +550,59 @@ public:
 
 class CSeqNo
 {
+    int32_t value;
+
 public:
+
+   explicit CSeqNo(int32_t v): value(v) {}
+
+   // Comparison
+   bool operator == (const CSeqNo& other) const { return other.value == value; }
+   bool operator < (const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) < 0;
+   }
+
+   // The std::rel_ops namespace cannot be "imported"
+   // as a whole into the class - it can only be used
+   // in the application code. 
+   bool operator != (const CSeqNo& other) const { return other.value != value; }
+   bool operator > (const CSeqNo& other) const { return other < *this; }
+   bool operator >= (const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) >= 0;
+   }
+   bool operator <=(const CSeqNo& other) const
+   {
+       return seqcmp(value, other.value) <= 0;
+   }
+
+   // circular arithmetics
+   friend int operator-(const CSeqNo& c1, const CSeqNo& c2)
+   {
+       return seqoff(c2.value, c1.value);
+   }
+
+   friend CSeqNo operator-(const CSeqNo& c1, int off)
+   {
+       return CSeqNo(decseq(c1.value, off));
+   }
+
+   friend CSeqNo operator+(const CSeqNo& c1, int off)
+   {
+       return CSeqNo(incseq(c1.value, off));
+   }
+
+   friend CSeqNo operator+(int off, const CSeqNo& c1)
+   {
+       return CSeqNo(incseq(c1.value, off));
+   }
+
+   CSeqNo& operator++()
+   {
+       value = incseq(value);
+       return *this;
+   }
 
    /// This behaves like seq1 - seq2, in comparison to numbers,
    /// and with the statement that only the sign of the result matters.
@@ -663,6 +615,7 @@ public:
    /// distance between two sequence numbers.
    ///
    /// Example: to check if (seq1 %> seq2): seqcmp(seq1, seq2) > 0.
+   /// Note: %> stands for "later than".
    inline static int seqcmp(int32_t seq1, int32_t seq2)
    {return (abs(seq1 - seq2) < m_iSeqNoTH) ? (seq1 - seq2) : (seq2 - seq1);}
 
@@ -721,6 +674,13 @@ public:
        return seq - dec;
    }
 
+   static int32_t maxseq(int32_t seq1, int32_t seq2)
+   {
+       if (seqcmp(seq1, seq2) < 0)
+           return seq2;
+       return seq1;
+   }
+
 public:
    static const int32_t m_iSeqNoTH = 0x3FFFFFFF;             // threshold for comparing seq. no.
    static const int32_t m_iMaxSeqNo = 0x7FFFFFFF;            // maximum sequence number used in UDT
@@ -740,15 +700,138 @@ public:
    static const int32_t m_iMaxAckSeqNo = 0x7FFFFFFF;         // maximum ACK sub-sequence number used in UDT
 };
 
+template <size_t BITS, uint32_t MIN = 0>
+class RollNumber
+{
+    typedef RollNumber<BITS, MIN> this_t;
+    typedef Bits<BITS, 0> number_t;
+    uint32_t number;
 
+public:
+
+    static const size_t OVER = number_t::mask+1;
+    static const size_t HALF = (OVER-MIN)/2;
+
+private:
+    static int Diff(uint32_t left, uint32_t right)
+    {
+        // UNExpected order, diff is negative
+        if ( left < right )
+        {
+            int32_t diff = right - left;
+            if ( diff >= int32_t(HALF) ) // over barrier
+            {
+                // It means that left is less than right because it was overflown
+                // For example: left = 0x0005, right = 0xFFF0; diff = 0xFFEB > HALF
+                left += OVER - MIN;  // left was really 0x00010005, just narrowed.
+                // Now the difference is 0x0015, not 0xFFFF0015
+            }
+        }
+        else
+        {
+            int32_t diff = left - right;
+            if ( diff >= int32_t(HALF) )
+            {
+                right += OVER - MIN;
+            }
+        }
+
+        return left - right;
+    }
+
+public:
+    explicit RollNumber(uint32_t val): number(val)
+    {
+    }
+
+    bool operator<(const this_t& right) const
+    {
+        int32_t ndiff = number - right.number;
+        if (ndiff < -int32_t(HALF))
+        {
+            // it' like ndiff > 0
+            return false;
+        }
+
+        if (ndiff > int32_t(HALF))
+        {
+            // it's like ndiff < 0
+            return true;
+        }
+
+        return ndiff < 0;
+    }
+
+    bool operator>(const this_t& right) const
+    {
+        return right < *this;
+    }
+
+    bool operator=(const this_t& right) const
+    {
+        return number == right.number;
+    }
+
+    bool operator<=(const this_t& right) const
+    {
+        return !(*this > right);
+    }
+
+    bool operator>=(const this_t& right) const
+    {
+        return !(*this < right);
+    }
+
+    void operator++(int)
+    {
+        ++number;
+        if (number > number_t::mask)
+            number = MIN;
+    }
+
+    this_t& operator++() { (*this)++; return *this; }
+
+    void operator--(int)
+    {
+        if (number == MIN)
+            number = number_t::mask;
+        else
+            --number;
+    }
+    this_t& operator--() { (*this)--; return *this; }
+
+    int32_t operator-(this_t right)
+    {
+        return Diff(this->number, right.number);
+    }
+
+    void operator+=(int32_t delta)
+    {
+        // NOTE: this condition in practice tests if delta is negative.
+        // That's because `number` is always positive, so negated delta
+        // can't be ever greater than this, unless it's negative.
+        if (-delta > int64_t(number))
+        {
+            number = OVER - MIN + number + delta; // NOTE: delta is negative
+        }
+        else
+        {
+            number += delta;
+            if (number >= OVER)
+                number -= OVER - MIN;
+        }
+    }
+
+    operator uint32_t() const { return number; }
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
 struct CIPAddress
 {
    static bool ipcmp(const struct sockaddr* addr1, const struct sockaddr* addr2, int ver = AF_INET);
-   static void ntop(const struct sockaddr* addr, uint32_t ip[4], int ver = AF_INET);
-   static void pton(struct sockaddr* addr, const uint32_t ip[4], int ver = AF_INET);
+   static void ntop(const struct sockaddr_any& addr, uint32_t ip[4]);
+   static void pton(sockaddr_any& addr, const uint32_t ip[4], int sa_family, const sockaddr_any& peer);
    static std::string show(const struct sockaddr* adr);
 };
 
@@ -767,22 +850,21 @@ class StatsLossRecords
     std::bitset<SIZE> array;
 
 public:
-
-    StatsLossRecords(): initseq(-1) {}
+    StatsLossRecords(): initseq(SRT_SEQNO_NONE) {}
 
     // To check if this structure still keeps record of that sequence.
     // This is to check if the information about this not being found
     // is still reliable.
     bool exists(int32_t seq)
     {
-        return initseq != -1 && CSeqNo::seqcmp(seq, initseq) >= 0;
+        return initseq != SRT_SEQNO_NONE && CSeqNo::seqcmp(seq, initseq) >= 0;
     }
 
     int32_t base() { return initseq; }
 
     void clear()
     {
-        initseq = -1;
+        initseq = SRT_SEQNO_NONE;
         array.reset();
     }
 
@@ -879,6 +961,412 @@ public:
 };
 
 
+// There are some better or worse things you can find outside,
+// there's also boost::circular_buffer, but it's too overspoken
+// to be included here. We also can't rely on boost. Maybe in future
+// when it's added to the standard and SRT can heighten C++ standard
+// requirements; until then it needs this replacement.
+template <class Value>
+class CircularBuffer
+{
+#ifdef SRT_TEST_CIRCULAR_BUFFER
+public:
+#endif
+    int m_iSize;
+    Value* m_aStorage;
+    int m_xBegin;
+    int m_xEnd;
+
+    static void destr(Value& v)
+    {
+        v.~Value();
+    }
+
+    static void constr(Value& v)
+    {
+        new ((void*)&v) Value();
+    }
+
+    template <class V>
+    static void constr(Value& v, const V& source)
+    {
+        new ((void*)&v) Value(source);
+    }
+
+    // Wipe the copy constructor
+    CircularBuffer(const CircularBuffer&);
+
+public:
+    typedef Value value_type;
+
+    CircularBuffer(int size)
+        :m_iSize(size+1),
+         m_xBegin(0),
+         m_xEnd(0)
+    {
+        // We reserve one spare element just for a case.
+        if (size == 0)
+            m_aStorage = 0;
+        else
+            m_aStorage = (Value*)::operator new (sizeof(Value) * m_iSize);
+    }
+
+    void set_capacity(int size)
+    {
+        reset();
+
+        // This isn't called resize (the size is 0 after the operation)
+        // nor reserve (the existing elements are removed).
+        if (size != m_iSize)
+        {
+            if (m_aStorage)
+                ::operator delete (m_aStorage);
+            m_iSize = size+1;
+            m_aStorage = (Value*)::operator new (sizeof(Value) * m_iSize);
+        }
+    }
+
+    void reset()
+    {
+        if (m_xEnd < m_xBegin)
+        {
+            for (int i = m_xBegin; i < m_iSize; ++i)
+                destr(m_aStorage[i]);
+            for (int i = 0; i < m_xEnd; ++i)
+                destr(m_aStorage[i]);
+        }
+        else
+        {
+            for (int i = m_xBegin; i < m_xEnd; ++i)
+                destr(m_aStorage[i]);
+        }
+
+        m_xBegin = 0;
+        m_xEnd = 0;
+    }
+
+    ~CircularBuffer()
+    {
+        reset();
+        ::operator delete (m_aStorage);
+    }
+
+    // In the beginning, m_xBegin == m_xEnd, which
+    // means that the container is empty. Adding can
+    // be done exactly at the place pointed to by m_xEnd,
+    // and m_xEnd must be then shifted to the next unused one.
+    // When (m_xEnd + 1) % m_zSize == m_xBegin, the container
+    // is considered full and the element adding is rejected.
+    //
+    // This container is not designed to be STL-compatible
+    // because it doesn't make much sense. It's not a typical
+    // container, even treated as random-access container.
+
+    int shift(int basepos, int shift) const
+    {
+        return (basepos + shift) % m_iSize;
+    }
+
+    // Simplified versions with ++ and --; avoid using division instruction
+    int shift_forward(int basepos) const
+    {
+        if (++basepos == m_iSize)
+            return 0;
+        return basepos;
+    }
+
+    int shift_backward(int basepos) const
+    {
+        if (basepos == 0)
+            return m_iSize-1;
+        return --basepos;
+    }
+
+    int size() const
+    {
+        // Count the distance between begin and end
+        if (m_xEnd < m_xBegin)
+        {
+            // Use "merge two slices" method.
+            // (BEGIN - END) is the distance of the unused
+            // space in the middle. Used space is left to END
+            // and right to BEGIN, the sum of the left and right
+            // slice and the free space is the size.
+
+            // This includes also a case when begin and end
+            // are equal, which means that it's empty, so
+            // spaceleft() should simply return m_iSize.
+            return m_iSize - (m_xBegin - m_xEnd);
+        }
+
+        return m_xEnd - m_xBegin;
+    }
+
+    bool empty() const { return m_xEnd == m_xBegin; }
+
+    size_t capacity() const { return m_iSize-1; }
+
+    int spaceleft() const
+    {
+        // It's kinda tautology, but this will be more efficient.
+        if (m_xEnd < m_xBegin)
+        {
+            return m_xBegin - m_xEnd;
+        }
+
+        return m_iSize - (m_xEnd - m_xBegin);
+    }
+
+    // This is rather written for testing and rather won't
+    // be used in the real code.
+    template <class V>
+    int push(const V& v)
+    {
+        // Check if you can add
+        int nend = shift_forward(m_xEnd);
+        if ( nend == m_xBegin)
+            return -1;
+
+        constr(m_aStorage[m_xEnd], v);
+        m_xEnd = nend;
+        return size() - 1;
+    }
+
+    Value* push()
+    {
+        int nend = shift_forward(m_xEnd);
+        if ( nend == m_xBegin)
+            return NULL;
+
+        Value* pos = &m_aStorage[m_xEnd];
+        constr(*pos);
+        m_xEnd = nend;
+        return pos;
+    }
+
+    bool access(int position, Value*& w_v)
+    {
+        // This version doesn't require the boolean value to report
+        // whether the element is newly added because it never adds
+        // a new element.
+        int ipos, vend;
+
+        if (!INT_checkAccess(position, ipos, vend))
+            return false;
+        if (ipos >= vend) // exceeds
+            return false;
+
+        INT_access(ipos, false, (w_v)); // never exceeds
+        return true;
+    }
+
+    // Ok, now it's the real deal.
+    bool access(int position, Value*& w_v, bool& w_isnew)
+    {
+        int ipos, vend;
+
+        if (!INT_checkAccess(position, ipos, vend))
+            return false;
+        bool exceeds = (ipos >= vend);
+        w_isnew = exceeds;
+
+        INT_access(ipos, exceeds, (w_v));
+        return true;
+    }
+
+private:
+    bool INT_checkAccess(int position, int& ipos, int& vend)
+    {
+        // Reject if no space left.
+        // Also INVAL if negative position.
+        if (position >= (m_iSize-1) || position < 0)
+            return false; // That's way to far, we can't even calculate
+
+        ipos = m_xBegin + position;
+
+        vend = m_xEnd;
+        if (m_xEnd < m_xBegin)
+            vend += m_iSize;
+
+        return true;
+    }
+
+    void INT_access(int ipos, bool exceeds, Value*& w_v)
+    {
+        if (ipos >= m_iSize)
+            ipos -= m_iSize; // wrap around
+
+        // Update the end position.
+        if (exceeds)
+        {
+            int nend = ipos+1;
+            if (m_xEnd > nend)
+            {
+                // Here we know that the current index exceeds the size.
+                // So, if this happens, it's m_xEnd wrapped around.
+                // Clear out elements in two slices:
+                // - from m_xEnd to m_iSize-1
+                // - from 0 to nend
+                for (int i = m_xEnd; i < m_iSize; ++i)
+                    constr(m_aStorage[i]);
+                for (int i = 0; i < nend; ++i)
+                    constr(m_aStorage[i]);
+            }
+            else
+            {
+                for (int i = m_xEnd; i < nend; ++i)
+                    constr(m_aStorage[i]);
+            }
+
+            if (nend == m_iSize)
+                nend = 0;
+
+            m_xEnd = nend;
+        }
+
+        w_v = &m_aStorage[ipos];
+    }
+
+public:
+    bool set(int position, const Value& newval, bool overwrite = true)
+    {
+        Value* pval = 0;
+        bool isnew = false;
+        if (!access(position, (pval), (isnew)))
+            return false;
+
+        if (isnew || overwrite)
+            *pval = newval;
+        return true;
+    }
+
+    template<class Updater>
+    bool update(int position, Updater updater)
+    {
+        Value* pval = 0;
+        bool isnew = false;
+        if (!access(position, (pval), (isnew)))
+            return false;
+
+        updater(*pval, isnew);
+        return true;
+    }
+
+    int getIndexFor(int position) const
+    {
+        int ipos = m_xBegin + position;
+
+        int vend = m_xEnd;
+        if (vend < m_xBegin)
+            vend += m_iSize;
+
+        if (ipos >= vend)
+            return -1;
+
+        if (ipos >= m_iSize)
+            ipos -= m_iSize;
+
+        return ipos;
+    }
+
+    bool get(int position, Value& w_out) const
+    {
+        // Check if that position is occupied
+        if (position > m_iSize || position < 0)
+            return false;
+
+        int ipos = getIndexFor(position);
+        if (ipos == -1)
+            return false;
+
+        w_out = m_aStorage[ipos];
+        return true;
+    }
+
+    bool drop(int position)
+    {
+        // This function "deletes" items by shifting the
+        // given position to position 0. That is,
+        // elements from the beginning are being deleted
+        // up to (including) the given position.
+        if (position > m_iSize || position < 1)
+            return false;
+
+        int ipos = m_xBegin + position;
+        int vend = m_xEnd;
+        if (vend < m_xBegin)
+            vend += m_iSize;
+
+        // Destroy the elements in the removed range
+
+        if (ipos >= vend)
+        {
+            // There was a request to drop; the position
+            // is higher than the number of items. Allow this
+            // and simply make the container empty.
+            reset();
+            return true;
+        }
+
+        // Otherwise we have a new beginning.
+        int nbegin = ipos;
+
+        // Destroy the old elements
+        if (nbegin >= m_iSize)
+        {
+            nbegin -= m_iSize;
+
+            for (int i = m_xBegin; i < m_iSize; ++i)
+                destr(m_aStorage[i]);
+            for (int i = 0; i < nbegin; ++i)
+                destr(m_aStorage[i]);
+        }
+        else
+        {
+            for (int i = m_xBegin; i < nbegin; ++i)
+                destr(m_aStorage[i]);
+        }
+
+        m_xBegin = nbegin;
+
+        return true;
+    }
+
+    // This function searches for an element that satisfies
+    // the given predicate. If none found, returns -1.
+    template <class Predicate>
+    int find_if(Predicate pred)
+    {
+        if (m_xEnd < m_xBegin)
+        {
+            // Loop in two slices
+            for (int i = m_xBegin; i < m_iSize; ++i)
+                if (pred(m_aStorage[i]))
+                    return i - m_xBegin;
+
+            for (int i = 0; i < m_xEnd; ++i)
+                if (pred(m_aStorage[i]))
+                    return i + m_iSize - m_xBegin;
+        }
+        else
+        {
+            for (int i = m_xBegin; i < m_xEnd; ++i)
+                if (pred(m_aStorage[i]))
+                    return i - m_xBegin;
+        }
+
+        return -1;
+    }
+};
+
+namespace srt_logging
+{
+std::string SockStatusStr(SRT_SOCKSTATUS s);
+#if ENABLE_EXPERIMENTAL_BONDING
+std::string MemberStatusStr(SRT_MEMBERSTATUS s);
+#endif
+}
+
 // Version parsing
 inline ATR_CONSTEXPR uint32_t SrtVersion(int major, int minor, int patch)
 {
@@ -895,7 +1383,7 @@ inline int32_t SrtParseVersion(const char* v)
         return 0;
     }
 
-    return major*0x10000 + minor*0x100 + patch;
+    return SrtVersion(major, minor, patch);
 }
 
 inline std::string SrtVersionString(int version)
@@ -908,5 +1396,93 @@ inline std::string SrtVersionString(int version)
     sprintf(buf, "%d.%d.%d", major, minor, patch);
     return buf;
 }
+
+bool SrtParseConfig(std::string s, SrtConfig& w_config);
+
+struct PacketMetric
+{
+    uint32_t pkts;
+    uint64_t bytes;
+
+    void update(uint64_t size)
+    {
+        ++pkts;
+        bytes += size;
+    }
+
+    void update(size_t mult, uint64_t value)
+    {
+        pkts += mult;
+        bytes += mult * value;
+    }
+
+    uint64_t fullBytes();
+};
+
+template <class METRIC_TYPE>
+struct MetricOp;
+
+template <class METRIC_TYPE>
+struct MetricUsage
+{
+    METRIC_TYPE local;
+    METRIC_TYPE total;
+
+    void Clear()
+    {
+        MetricOp<METRIC_TYPE>::Clear(local);
+    }
+
+    void Init()
+    {
+        MetricOp<METRIC_TYPE>::Clear(total);
+        Clear();
+    }
+
+    void Update(uint64_t value)
+    {
+        local += value;
+        total += value;
+    }
+
+    void UpdateTimes(size_t mult, uint64_t value)
+    {
+        local += mult * value;
+        total += mult * value;
+    }
+};
+
+template <>
+inline void MetricUsage<PacketMetric>::Update(uint64_t value)
+{
+    local.update(value);
+    total.update(value);
+}
+
+template <>
+inline void MetricUsage<PacketMetric>::UpdateTimes(size_t mult, uint64_t value)
+{
+    local.update(mult, value);
+    total.update(mult, value);
+}
+
+template <class METRIC_TYPE>
+struct MetricOp
+{
+    static void Clear(METRIC_TYPE& m)
+    {
+        m = 0;
+    }
+};
+
+template <>
+struct MetricOp<PacketMetric>
+{
+    static void Clear(PacketMetric& p)
+    {
+        p.pkts = 0;
+        p.bytes = 0;
+    }
+};
 
 #endif

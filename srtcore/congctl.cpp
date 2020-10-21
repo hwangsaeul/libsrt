@@ -169,7 +169,8 @@ private:
         const double pktsize = (double) m_zSndAvgPayloadSize + CPacket::SRT_DATA_HDR_SIZE;
         m_dPktSndPeriod = 1000 * 1000.0 * (pktsize / m_llSndMaxBW);
         HLOGC(cclog.Debug, log << "LiveCC: sending period updated: " << m_dPktSndPeriod
-            << " (pktsize=" << pktsize << ", bw=" << m_llSndMaxBW);
+                << " by avg pktsize=" << m_zSndAvgPayloadSize
+                << ", bw=" << m_llSndMaxBW);
     }
 
     void setMaxBW(int64_t maxbw)
@@ -177,7 +178,6 @@ private:
         m_llSndMaxBW = maxbw > 0 ? maxbw : BW_INFINITE;
         updatePktSndPeriod();
 
-#ifdef SRT_ENABLE_NOCWND
         /*
          * UDT default flow control should not trigger under normal SRT operation
          * UDT stops sending if the number of packets in transit (not acknowledged)
@@ -187,9 +187,6 @@ private:
          */
         // XXX Consider making this a socket option.
         m_dCWndSize = m_dMaxCWndSize;
-#else
-        m_dCWndSize = 1000;
-#endif
     }
 
     void updateBandwidth(int64_t maxbw, int64_t bw) ATR_OVERRIDE
